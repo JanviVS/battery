@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Battery Monitoring System</title>
+    <!-- Firebase SDK -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-app-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-database-compat.min.js"></script>
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        :root {
+            --primary: #00bcd4;
+            --secondary: #4caf50;
+            --warning: #ff9800;
+            --danger: #f44336;
+            --success: #8bc34a;
+            --light: #f8f9fa;
+            --dark: #2c3e50;
+            --battery-full: #4caf50;
+            --battery-medium: #ff9800;
+            --battery-low: #f44336;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            color: var(--dark);
+            padding: 1.5rem;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        header h1 {
+            font-size: 2.2rem;
+            margin: 0;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+        }
+        
+        .status-dot {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background-color: #ccc;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.online {
+            background-color: var(--success);
+            box-shadow: 0 0 15px var(--success);
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        @media (max-width: 1024px) {
+            .grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            padding: 25px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .card-title {
+            font-size: 1.4rem;
+            color: var(--dark);
+            font-weight: 700;
+        }
+        
+        .card-icon {
+            font-size: 2rem;
+            opacity: 0.7;
+        }
+        
+        .gauge-container {
+            position: relative;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .gauge {
+            width: 180px;
+            height: 180px;
+        }
+        
+        .gauge-value {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        
+        .gauge-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: var(--dark);
+        }
+        
+        .gauge-unit {
+            font-size: 1rem;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+        
+        .battery-visual {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px 0;
+        }
+        
+        .battery-icon {
+            width: 120px;
+            height: 60px;
+            border: 3px solid #ddd;
+            border-radius: 8px;
+            position: relative;
+            background: #f5f5f5;
+        }
+        
+        .battery-icon::after {
+            content: '';
+            position: absolute;
+            right: -8px;
+            top: 18px;
+            width: 8px;
+            height: 24px;
+            background: #ddd;
+            border-radius: 0 3px 3px 0;
+        }
+        
+        .battery-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: all 0.5s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .battery-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, rgba(255,255,255,0.3) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0.3) 75%, transparent 75%);
+            background-size: 20px 20px;
+            animation: move 1s linear infinite;
+        }
+        
+        @keyframes move {
+            0% { background-position: 0 0; }
+            100% { background-position: 20px 20px; }
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 200px;
+            width: 100%;
+            margin-top: 20px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-item {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            transition: transform 0.2s ease;
+        }
+        
+        .stat-item:hover {
+            transform: scale(1.05);
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary);
+        }
+        
+        .stat-label {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .full-width-card {
+            grid-column: 1 / -1;
+            margin-top: 20px;
+        }
+        
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+        }
+        
+        .alert.warning {
+            background: rgba(255, 152, 0, 0.1);
+            border: 1px solid var(--warning);
+            color: #e65100;
+        }
+        
+        .alert.danger {
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid var(--danger);
+            color: #c62828;
+        }
+        
+        .alert.show {
+            display: flex;
+        }
+        
+        footer {
+            margin-top: 40px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.9rem;
+            padding: 20px 0;
+        }
+        
+        .timestamp {
+            font-size: 0.8rem;
+            color: #666;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>⚡ Battery Monitoring System</h1>
+            </div>
+            <div class="status-indicator">
+                <div class="status-dot" id="connectionStatus"></div>
+                <span id="connectionText">Connecting...</span>
+            </div>
+        </header>
+        
+        <div id="alertContainer">
+            <div id="lowBatteryAlert" class="alert warning">
+                <span>⚠️</span>
+                <span>Low Battery Warning: Voltage below 3.2V</span>
+            </div>
+            <div id="criticalBatteryAlert" class="alert danger">
+                <span>🚨</span>
+                <span>Critical Battery Level: Voltage below 3.0V</span>
+            </div>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Battery Voltage</h2>
+                    <span class="card-icon">🔋</span>
+                </div>
+                <div class="gauge-container">
+                    <canvas id="voltageGauge" class="gauge"></canvas>
+                    <div class="gauge-value">
+                        <div class="gauge-number" id="voltageValue">0.0</div>
+                        <div class="gauge-unit">Volts</div>
+                    </div>
+                </div>
+                <div class="battery-visual">
+                    <div class="battery-icon">
+                        <div class="battery-fill" id="batteryFill"></div>
+                    </div>
+                </div>
+                <div class="timestamp" id="voltageTimestamp">Last updated: --</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Current Draw</h2>
+                    <span class="card-icon">⚡</span>
+                </div>
+                <div class="gauge-container">
+                    <canvas id="currentGauge" class="gauge"></canvas>
+                    <div class="gauge-value">
+                        <div class="gauge-number" id="currentValue">0.0</div>
+                        <div class="gauge-unit">mA</div>
+                    </div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="avgCurrent">0.0</div>
+                        <div class="stat-label">Avg Current</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="maxCurrent">0.0</div>
+                        <div class="stat-label">Max Current</div>
+                    </div>
+                </div>
+                <div class="timestamp" id="currentTimestamp">Last updated: --</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Power Consumption</h2>
+                    <span class="card-icon">⚙️</span>
+                </div>
+                <div class="gauge-container">
+                    <canvas id="powerGauge" class="gauge"></canvas>
+                    <div class="gauge-value">
+                        <div class="gauge-number" id="powerValue">0.0</div>
+                        <div class="gauge-unit">mW</div>
+                    </div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalEnergy">0.0</div>
+                        <div class="stat-label">Total Energy (Wh)</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="batteryLife">--:--</div>
+                        <div class="stat-label">Est. Life</div>
+                    </div>
+                </div>
+                <div class="timestamp" id="powerTimestamp">Last updated: --</div>
+            </div>
+        </div>
+        
+        <div class="card full-width-card">
+            <div class="card-header">
+                <h2 class="card-title">Real-time Monitoring Charts</h2>
+                <span class="timestamp" id="chartsTimestamp">Last updated: --</span>
+            </div>
+            <div class="charts-grid">
+                <div class="chart-container">
+                    <h3 style="text-align: center; margin-bottom: 10px; color: var(--dark);">Voltage & Current Trends</h3>
+                    <canvas id="voltageCurrentChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3 style="text-align: center; margin-bottom: 10px; color: var(--dark);">Power Consumption</h3>
+                    <canvas id="powerChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            © 2025 IoT Battery Monitoring System. Real-time battery analytics and monitoring.
+        </footer>
+    </div>
+
+    <script>
+        // Firebase configuration - Replace with your Firebase config
+        const firebaseConfig = {
+            databaseURL: "https://maternova-health-records-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        };
+
+        // Initialize Firebase
+        let firebaseApp;
+        let database;
+        let isConnected = false;
+        
+        try {
+            firebaseApp = firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+            isConnected = true;
+            
+            // Real-time listeners for battery data
+            const batteryRef = database.ref('batteryMonitor');
+            // Listen for voltage changes
+batteryRef.child('voltage').on('value', (snapshot) => {
+    if (snapshot.exists()) {
+        let rawVoltage = parseFloat(snapshot.val());
+        // Apply correction if sensor over-reports by a factor of ~10
+        if (rawVoltage > 10) rawVoltage /= 10;
+        const voltage = rawVoltage;
+        updateVoltageDisplay(voltage);
+        updateTimestamp('voltageTimestamp');
+    }
+});
+
+// Listen for current changes
+batteryRef.child('current_mA').on('value', (snapshot) => {
+    if (snapshot.exists()) {
+        let rawCurrent = parseFloat(snapshot.val());
+        // Optionally fix if needed (e.g., if it’s also 10x off)
+        if (rawCurrent > 5000) rawCurrent /= 10;
+        const current = Math.abs(rawCurrent);
+        updateCurrentDisplay(current);
+        updateTimestamp('currentTimestamp');
+    }
+});
+
+// Listen for power changes
+batteryRef.child('power_mW').on('value', (snapshot) => {
+    if (snapshot.exists()) {
+        let rawPower = parseFloat(snapshot.val());
+        // Optionally fix power scaling too if needed
+         if (rawPower > 10000) rawPower /= 10;
+        const power = rawPower;
+        updatePowerDisplay(power);
+        updateTimestamp('powerTimestamp');
+    }
+});
+
+
+            // Connection status monitoring
+            database.ref('.info/connected').on('value', (snap) => {
+                if (snap.val() === true) {
+                    document.getElementById('connectionStatus').classList.add('online');
+                    document.getElementById('connectionText').textContent = 'Connected';
+                } else {
+                    document.getElementById('connectionStatus').classList.remove('online');
+                    document.getElementById('connectionText').textContent = 'Disconnected';
+                }
+            });
+            
+        } catch (error) {
+            console.error("Firebase initialization error:", error);
+            document.getElementById('connectionText').textContent = 'Connection Failed';
+        }
+
+        // Data storage for calculations
+        let voltageHistory = [];
+        let currentHistory = [];
+        let powerHistory = [];
+        let energyConsumption = 0;
+        let lastUpdateTime = Date.now();
+        
+        // Chart setup
+        const timeLabels = Array.from({length: 20}, (_, i) => 
+            new Date(Date.now() - (19-i) * 30000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})
+        );
+        
+        const voltageData = Array(20).fill(3.7);
+        const currentData = Array(20).fill(0);
+        const powerData = Array(20).fill(0);
+
+        // Voltage & Current Chart
+        const voltageCurrentChart = new Chart(document.getElementById('voltageCurrentChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [{
+                    label: 'Voltage (V)',
+                    data: voltageData,
+                    borderColor: '#00bcd4',
+                    backgroundColor: 'rgba(0, 188, 212, 0.1)',
+                    yAxisID: 'y',
+                    tension: 0.4,
+                    pointRadius: 3
+                }, {
+                    label: 'Current (mA)',
+                    data: currentData,
+                    borderColor: '#ff9800',
+                    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                    yAxisID: 'y1',
+                    tension: 0.4,
+                    pointRadius: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        min: 2.5,
+                        max: 4.2,
+                        title: {
+                            display: true,
+                            text: 'Voltage (V)'
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        min: 0,
+                        title: {
+                            display: true,
+                            text: 'Current (mA)'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    }
+                }
+            }
+        });
+
+        // Power Chart
+        const powerChart = new Chart(document.getElementById('powerChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [{
+                    label: 'Power (mW)',
+                    data: powerData,
+                    borderColor: '#4caf50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Power (mW)'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Gauge charts
+        const voltageGauge = new Chart(document.getElementById('voltageGauge').getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [3.7, 0.5],
+                    backgroundColor: ['#00bcd4', 'rgba(0, 188, 212, 0.1)'],
+                    borderWidth: 0,
+                    circumference: 270,
+                    rotation: -135
+                }]
+            },
+            options: {
+                responsive: true,
+                cutout: '75%',
+                plugins: { legend: { display: false }, tooltip: { enabled: false } }
+            }
+        });
+
+        const currentGauge = new Chart(document.getElementById('currentGauge').getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [0, 1000],
+                    backgroundColor: ['#ff9800', 'rgba(255, 152, 0, 0.1)'],
+                    borderWidth: 0,
+                    circumference: 270,
+                    rotation: -135
+                }]
+            },
+            options: {
+                responsive: true,
+                cutout: '75%',
+                plugins: { legend: { display: false }, tooltip: { enabled: false } }
+            }
+        });
+
+        const powerGauge = new Chart(document.getElementById('powerGauge').getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [0, 5000],
+                    backgroundColor: ['#4caf50', 'rgba(76, 175, 80, 0.1)'],
+                    borderWidth: 0,
+                    circumference: 270,
+                    rotation: -135
+                }]
+            },
+            options: {
+                responsive: true,
+                cutout: '75%',
+                plugins: { legend: { display: false }, tooltip: { enabled: false } }
+            }
+        });
+
+        // Update functions
+        function updateVoltageDisplay(voltage) {
+            document.getElementById('voltageValue').textContent = voltage.toFixed(2);
+            
+            // Update gauge
+            const maxVoltage = 4.2;
+            voltageGauge.data.datasets[0].data = [voltage, maxVoltage - voltage];
+            voltageGauge.update();
+            
+            // Update battery visual
+            const batteryPercent = Math.max(0, Math.min(100, ((voltage - 3.0) / (4.2 - 3.0)) * 100));
+            const batteryFill = document.getElementById('batteryFill');
+            batteryFill.style.width = batteryPercent + '%';
+            
+            if (batteryPercent > 60) {
+                batteryFill.style.background = 'linear-gradient(90deg, #4caf50, #8bc34a)';
+            } else if (batteryPercent > 30) {
+                batteryFill.style.background = 'linear-gradient(90deg, #ff9800, #ffc107)';
+            } else {
+                batteryFill.style.background = 'linear-gradient(90deg, #f44336, #ff5722)';
+            }
+            
+            // Update chart
+            voltageData.push(voltage);
+            voltageData.shift();
+            updateCharts();
+            
+            // Store for history
+            voltageHistory.push(voltage);
+            if (voltageHistory.length > 100) voltageHistory.shift();
+            
+            // Check for alerts
+            checkBatteryAlerts(voltage);
+        }
+
+        function updateCurrentDisplay(current) {
+            document.getElementById('currentValue').textContent = Math.abs(current).toFixed(1);
+            
+            // Update gauge
+            const maxCurrent = 1000; // Adjust based on your expected max current
+            currentGauge.data.datasets[0].data = [Math.abs(current), maxCurrent - Math.abs(current)];
+            currentGauge.update();
+            
+            // Update chart
+            currentData.push(Math.abs(current));
+            currentData.shift();
+            updateCharts();
+            
+            // Store for history and calculations
+            currentHistory.push(Math.abs(current));
+            if (currentHistory.length > 100) currentHistory.shift();
+            
+            updateStatistics();
+        }
+
+        function updatePowerDisplay(power) {
+            const actualPower = Math.abs(power);
+            document.getElementById('powerValue').textContent = actualPower.toFixed(1);
+            
+            // Update gauge
+            const maxPower = 5000; // Adjust based on your expected max power
+            powerGauge.data.datasets[0].data = [actualPower, maxPower - actualPower];
+            powerGauge.update();
+            
+            // Update chart
+            powerData.push(actualPower);
+            powerData.shift();
+            updateCharts();
+            
+            // Store for history and energy calculation
+            powerHistory.push(actualPower);
+            if (powerHistory.length > 100) powerHistory.shift();
+            
+            // Calculate cumulative energy consumption
+            const now = Date.now();
+            const timeDiff = (now - lastUpdateTime) / 3600000; // Convert to hours
+            energyConsumption += (actualPower / 1000) * timeDiff; // Convert mW to W
+            lastUpdateTime = now;
+            
+            document.getElementById('totalEnergy').textContent = energyConsumption.toFixed(3);
+            
+            // Estimate battery life (assuming 3.7V * 2000mAh = 7.4Wh typical battery)
+            if (actualPower > 0) {
+                const batteryCapacity = 7.4; // Wh
+                const remainingHours = batteryCapacity / (actualPower / 1000);
+                const hours = Math.floor(remainingHours);
+                const minutes = Math.floor((remainingHours - hours) * 60);
+                document.getElementById('batteryLife').textContent = `${hours}:${minutes.toString().padStart(2, '0')}`;
+            }
+        }
+
+        function updateCharts() {
+            // Update time labels
+            timeLabels.push(new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
+            timeLabels.shift();
+            
+            // Update both charts
+            voltageCurrentChart.data.labels = timeLabels;
+            voltageCurrentChart.data.datasets[0].data = voltageData;
+            voltageCurrentChart.data.datasets[1].data = currentData;
+            voltageCurrentChart.update();
+            
+            powerChart.data.labels = timeLabels;
+            powerChart.data.datasets[0].data = powerData;
+            powerChart.update();
+            
+            updateTimestamp('chartsTimestamp');
+        }
+
+        function updateStatistics() {
+            if (currentHistory.length === 0) return;
+            
+            const avgCurrent = currentHistory.reduce((a, b) => a + b, 0) / currentHistory.length;
+            const maxCurrent = Math.max(...currentHistory);
+            
+            document.getElementById('avgCurrent').textContent = avgCurrent.toFixed(1);
+            document.getElementById('maxCurrent').textContent = maxCurrent.toFixed(1);
+        }
+
+        function checkBatteryAlerts(voltage) {
+            const lowAlert = document.getElementById('lowBatteryAlert');
+            const criticalAlert = document.getElementById('criticalBatteryAlert');
+            
+            if (voltage < 3.0) {
+                criticalAlert.classList.add('show');
+                lowAlert.classList.remove('show');
+            } else if (voltage < 3.2) {
+                lowAlert.classList.add('show');
+                criticalAlert.classList.remove('show');
+            } else {
+                lowAlert.classList.remove('show');
+                criticalAlert.classList.remove('show');
+            }
+        }
+
+        function updateTimestamp(elementId) {
+            document.getElementById(elementId).textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        // Initialize with default values
+        updateVoltageDisplay(3.7);
+        updateCurrentDisplay(0);
+        updatePowerDisplay(0);
+    </script>
+</body>
+</html>
